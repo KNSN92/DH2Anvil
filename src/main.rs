@@ -12,7 +12,7 @@ use worldgen::DHData2WorldGenerator;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let conn =
-        DHDBConn::get_conn("../DistantHorizons.sqlite").expect("Failed to connect the database");
+        DHDBConn::get_conn("./DistantHorizons.sqlite").expect("Failed to connect the database");
     let section_poses = conn.get_section_poses()?;
     // ここからの行消したらワールドの全変換開始する
     let section_poses: Vec<_> = section_poses
