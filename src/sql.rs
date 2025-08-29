@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use rusqlite::Connection;
 
 use crate::{
-    data::{DHMappingEntry, DHSectionData, DHSectionPos, deserialize_data, deserialize_mapping},
+    data::{DHSectionData, DHSectionPos, deserialize_data, deserialize_mapping},
     decompress::CompressionMode,
 };
 
@@ -49,10 +49,14 @@ impl DHDBConn {
         })?;
         let mut sections = Vec::new();
         for raw_section in raw_sections_iter {
-            let (pos_x, pos_z, min_y, data, mapping, data_format_version, compression_mode) =
+            let (pos_x, pos_z, min_y, data, mapping, data_format_version, compression_mode_num) =
                 raw_section?;
-            let compression_mode = CompressionMode::from_num(compression_mode)
-                .unwrap_or_else(|| panic!("Invalid compression mode {compression_mode}"));
+            let compression_mode = CompressionMode::from_num(compression_mode_num);
+            let compression_mode = if let Some(compression_mode) = compression_mode {
+                compression_mode
+            } else {
+                bail!("Invalid compression mode number {compression_mode_num}")
+            };
             sections.push(DHSectionData {
                 pos: DHSectionPos { x: pos_x, z: pos_z },
                 min_y,

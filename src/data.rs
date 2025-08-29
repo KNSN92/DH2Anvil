@@ -14,6 +14,7 @@ pub struct DHSectionPos {
     pub z: i32,
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub struct DHSectionData {
     pub pos: DHSectionPos,
@@ -24,6 +25,7 @@ pub struct DHSectionData {
     pub compression_mode: CompressionMode,
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub struct DHMappingEntry {
     pub biome: String,
@@ -33,9 +35,9 @@ pub struct DHMappingEntry {
 
 #[derive(Debug, Clone, Copy)]
 pub struct DHFullDataPoint {
-    id: i32,
-    height: i32,
-    min_y: i32,
+    pub id: i32,
+    pub height: i32,
+    pub min_y: i32,
 }
 
 pub const DH_SECTION_WIDTH: usize = 64;

@@ -23,7 +23,7 @@ impl CompressionMode {
     pub fn decompress(&self, data: Vec<u8>) -> Result<Vec<u8>> {
         match self {
             CompressionMode::Uncompressed => Ok(data),
-            CompressionMode::Lz4 => unimplemented!("Lz4 Format is not supported"),
+            CompressionMode::Lz4 => unimplemented!("Lz4 Format is not implemented"),
             CompressionMode::Lzma2 => {
                 let mut decoder = XzDecoder::new(data.as_slice());
                 let mut decomped = Vec::new();
@@ -34,10 +34,10 @@ impl CompressionMode {
                     }
                     decomped.push(buf[0]);
                 };
-                if err.kind() != ErrorKind::UnexpectedEof {
-                    Err(anyhow!(err))
-                } else {
+                if err.kind() == ErrorKind::UnexpectedEof {
                     Ok(decomped)
+                } else {
+                    Err(anyhow!(err))
                 }
             }
         }

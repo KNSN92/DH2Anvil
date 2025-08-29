@@ -2,3 +2,6 @@
 DistantHorizons.sqlite
 
 .DS_Store
+flamegraph.svg
+
+/out/*
