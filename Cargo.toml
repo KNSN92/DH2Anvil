@@ -1,20 +1,21 @@
 [package]
-name = "DH2Anvil"
+name = "dh2anvil"
 version = "0.1.0"
 edition = "2024"
+authors = ["KNSN92"]
 
 [dependencies]
-rusqlite = { version = "0.36.0", features = ["bundled"] }
-fastanvil = "0.32.0"
-byteorder = "1.5.0"
 anyhow = "1.0.99"
+rusqlite = { version = "0.36.0", features = ["bundled"] }
+byteorder = "1.5.0"
 xz2 = "0.1.7"
 fastnbt = "2.6.0"
+fastanvil = "0.32.0"
 serde = "1.0.219"
-serde_with = "3.14.0"
+rayon = "1.11.0"
 indicatif = "0.18.0"
-genawaiter = "0.99.1"
-# lzma_rust2
+clap = { version = "4.5.46", features = ["derive"] }
 
 [profile.release]
-debug = true
+# debug = true
+opt-level = 3

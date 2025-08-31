@@ -24,33 +24,24 @@ impl CompressionMode {
         match self {
             CompressionMode::Uncompressed => Ok(data),
             CompressionMode::Lz4 => unimplemented!("Lz4 Format is not implemented"),
-            CompressionMode::Lzma2 => {
-                let mut decoder = XzDecoder::new(data.as_slice());
-                let mut decomped = Vec::new();
-                let err = loop {
-                    let mut buf = [0u8; 1];
-                    if let Err(e) = decoder.read(&mut buf) {
-                        break e;
-                    }
-                    decomped.push(buf[0]);
-                };
-                if err.kind() == ErrorKind::UnexpectedEof {
-                    Ok(decomped)
-                } else {
-                    Err(anyhow!(err))
-                }
-            }
+            CompressionMode::Lzma2 => decompress_lzma2(data),
         }
     }
 }
 
-// fn decompress_lzma2(data: Vec<u8>) -> Result<Vec<u8>> {
-//     let result_data = Vec::new();
-//     loop {
-//         let mut decoder = XzDecoder::new(Cursor::new(&data));
-//         let mut decomped = vec![];
-//         let res = (&mut decomped);
-//         if let Err(err) = res {}
-//     }
-//     Ok(result_data)
-// }
+fn decompress_lzma2(data: Vec<u8>) -> Result<Vec<u8>> {
+    let mut decoder = XzDecoder::new(data.as_slice());
+    let mut decomped = Vec::new();
+    let err = loop {
+        let mut buf = [0u8; 1];
+        if let Err(e) = decoder.read(&mut buf) {
+            break e;
+        }
+        decomped.push(buf[0]);
+    };
+    if err.kind() == ErrorKind::UnexpectedEof {
+        Ok(decomped)
+    } else {
+        Err(anyhow!(err))
+    }
+}

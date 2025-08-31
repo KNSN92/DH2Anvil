@@ -8,10 +8,35 @@ use byteorder::{BigEndian, ReadBytesExt};
 
 use crate::decompress::CompressionMode;
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RegionPos {
+    pub x: i32,
+    pub z: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DHSectionPos {
     pub x: i32,
     pub z: i32,
+}
+
+impl DHSectionPos {
+    pub fn to_region_pos(self) -> RegionPos {
+        RegionPos {
+            x: self.x >> 3,
+            z: self.z >> 3,
+        }
+    }
+}
+
+pub trait DHDataRequester {
+    #[allow(unused)]
+    fn get_section_poses(&self) -> Result<Vec<DHSectionPos>>;
+
+    fn request_sections_in_region(
+        &self,
+        pos: &RegionPos,
+    ) -> Result<HashMap<DHSectionPos, DHSectionData>>;
 }
 
 #[allow(unused)]
