@@ -2,9 +2,9 @@ use std::{
     collections::HashMap,
     fs::metadata,
     path::Path,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Receiver},
     thread,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
@@ -22,7 +22,7 @@ use crate::worldgen::WorldGenStatus;
 ///   Defaults to `./region`.
 /// - `threads`: Number of threads to use for world generation.
 ///   Set to `0` to automatically select the optimal number based on available CPU cores.
-/// - `db_path`: Path to the input `.sqlite` file containing world data.
+/// - `db_path`: Path to the input `.sqlite` file containing dh lod data.
 pub struct Args {
     #[arg(short, long, default_value_t = String::from("./region"), help="Specifies the output directory for generated `.mca` files.")]
     pub out: String,
@@ -40,7 +40,7 @@ pub struct Args {
         help = "Limits the generation range of region coordinates. If set to 0, all regions are generated. If set to 1 or higher, only regions where x and z are in the range -range to range-1 are generated."
     )]
     pub range: u32,
-    #[arg(help = "Path to the input `.sqlite` file containing world data.")]
+    #[arg(help = "Path to the input `.sqlite` file containing dh lod data.")]
     pub db_path: String,
 }
 
@@ -55,10 +55,10 @@ pub fn start_progressbar(
     regions_count: u64,
     out_dir: impl AsRef<Path>,
     status_receiver: Receiver<WorldGenStatus>,
-) -> Sender<()> {
+) -> impl FnOnce() {
     let out_dir = out_dir.as_ref().to_path_buf();
     let (stop_sender, stop_receiver) = mpsc::channel::<()>();
-    thread::spawn(move || {
+    let handle = thread::spawn(move || {
         let style = ProgressStyle::default_bar()
             .template(
                 "[{elapsed_precise}] {spinner} [{eta}] [{bar:40.green/blue}] {pos}/{len} {msg}",
@@ -76,10 +76,7 @@ pub fn start_progressbar(
         let mut generating_regions = HashMap::new();
         let mut total_generated_size = 0u64;
         loop {
-            if let Ok(_) = stop_receiver.try_recv() {
-                progresses.clear().unwrap();
-                break;
-            }
+            let now = SystemTime::now();
             if let Ok(status) = status_receiver.try_recv() {
                 match status {
                     WorldGenStatus::StartRegion { pos, thread_idx } => {
@@ -113,12 +110,13 @@ pub fn start_progressbar(
                             region_pos.x,
                             region_pos.z,
                             region_info.thread_idx,
-                            HumanBytes(file_size).to_string()
+                            HumanBytes(file_size)
                         ));
                     }
                     WorldGenStatus::FinishRegion { pos } => {
                         if let Some(region_info) = generating_regions.remove(&pos) {
                             total_generated_size += region_info.size;
+                            region_info.progressbar.finish_and_clear();
                             progresses.remove(&region_info.progressbar);
                         }
                     }
@@ -127,9 +125,23 @@ pub fn start_progressbar(
                     total_generated_size + generating_regions.values().map(|v| v.size).sum::<u64>();
                 all_progress.set_message(HumanBytes(total_size).to_string());
             }
-
-            thread::sleep(Duration::from_millis(5));
+            if stop_receiver.try_recv().is_ok() {
+                let total_size =
+                    total_generated_size + generating_regions.values().map(|v| v.size).sum::<u64>();
+                all_progress.finish_with_message(format!("{} Finished", HumanBytes(total_size)));
+                println!("Done ✨");
+                return;
+            }
+            let elapsed = now.elapsed().unwrap();
+            thread::sleep(
+                Duration::from_millis(10)
+                    .checked_sub(elapsed)
+                    .unwrap_or_else(|| Duration::from_millis(10)),
+            );
         }
     });
-    stop_sender
+    move || {
+        stop_sender.send(()).unwrap();
+        handle.join().unwrap();
+    }
 }

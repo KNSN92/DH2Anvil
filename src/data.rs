@@ -132,7 +132,7 @@ pub fn deserialize_mapping(
                 });
                 continue;
             }
-            if states.len() <= 0 {
+            if states.is_empty() {
                 mapping.push(DHMappingEntry {
                     biome,
                     block: Some(block),

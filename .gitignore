@@ -1,7 +1,8 @@
 /target
-DistantHorizons.*
+DistantHorizons*
 
 .DS_Store
 flamegraph.svg
 
 /out/*
+/region/*

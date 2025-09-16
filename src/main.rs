@@ -7,7 +7,6 @@ mod worldgen;
 
 use std::{
     collections::HashSet,
-    error::Error,
     fs::create_dir_all,
     path::Path,
     sync::{
@@ -16,6 +15,7 @@ use std::{
     },
 };
 
+use anyhow::{Result, ensure};
 use clap::Parser;
 use rayon::{
     ThreadPoolBuilder,
@@ -29,16 +29,20 @@ use crate::{
     worldgen::generate,
 };
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let args = Args::parse();
-
+    let db_path = Path::new(&args.db_path);
+    ensure!(
+        db_path.exists(),
+        format!("DH Lod data file '{}' does not exists", args.db_path)
+    );
     if args.threads > 0 {
         ThreadPoolBuilder::new()
             .num_threads(args.threads as usize)
             .build_global()
             .unwrap();
     }
-    let conn = DHDBConn::get_conn(args.db_path).expect("Failed to connect the database");
+    let conn = DHDBConn::get_conn(db_path)?;
     let region_poses: Vec<_> = conn
         .get_section_poses()?
         .into_par_iter()
@@ -52,12 +56,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    let conn = Mutex::new(conn);
     let out_dir = Path::new(&args.out);
     create_dir_all(out_dir)?;
     let (status_sender, status_receiver) = mpsc::channel();
     let stop_progressbar = start_progressbar(region_poses.len() as u64, out_dir, status_receiver);
-    generate(region_poses, Mutex::new(conn), out_dir, status_sender)?;
-    stop_progressbar.send(())?;
-    println!("Finished :)");
+    generate(region_poses, conn, out_dir, status_sender)?;
+    stop_progressbar();
     Ok(())
 }

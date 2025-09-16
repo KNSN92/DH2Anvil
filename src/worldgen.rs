@@ -1,12 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::{File, remove_file},
+    fs::File,
     io::{Read, Seek, Write},
     path::Path,
     sync::mpsc::Sender,
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Result, ensure};
 use fastanvil::Region;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -36,12 +36,11 @@ pub fn generate(
     out_dir: impl AsRef<Path>,
     status_sender: Sender<WorldGenStatus>,
 ) -> Result<()> {
-    if !out_dir.as_ref().is_dir() {
-        bail!(
-            "{} is not a directory",
-            out_dir.as_ref().to_str().unwrap_or("None")
-        );
-    }
+    ensure!(
+        out_dir.as_ref().is_dir(),
+        "{} is not a directory",
+        out_dir.as_ref().to_str().unwrap_or("None")
+    );
     let out_dir = out_dir.as_ref().to_path_buf();
     let temp_chunk = fastnbt::from_bytes::<Chunk>(CHUNK_TEMP)?;
     let region_poses = region_poses.into_iter().collect::<HashSet<_>>();
@@ -53,13 +52,11 @@ pub fn generate(
                 return Ok(());
             }
             let region_file = out_dir.join(format!("r.{}.{}.mca", region_pos.x, region_pos.z));
-            if region_file.exists() {
-                remove_file(&region_file)?;
-            }
             let region_file = File::options()
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(true)
                 .open(region_file)?;
             status_sender.send(WorldGenStatus::StartRegion {
                 pos: region_pos,
@@ -104,26 +101,26 @@ fn generate_region(
                 continue;
             };
             // Chunks in current section
-            let mut chunks = init_section_chunks(&chunk_temp, &section_pos);
+            let mut chunks = init_section_chunks(chunk_temp, &section_pos);
             for x in 0..DH_SECTION_WIDTH {
                 for z in 0..DH_SECTION_WIDTH {
                     let chunk = &mut chunks[(x & 0x30) >> 2 | (z & 0x30) >> 4];
                     let data_points = &dh_section.data[x * DH_SECTION_WIDTH + z];
                     for data_point in data_points {
-                        let block = get_block(data_point, &dh_section);
+                        let (block, biome) = get_block_biome(data_point, dh_section);
                         for y in data_point.min_y..data_point.min_y + data_point.height {
-                            chunk.set_block(
+                            chunk.set_block_biome(
                                 x as u32 & 0xf,
                                 (y + Y_OFFSET).min(319),
                                 z as u32 & 0xf,
                                 block.clone(),
+                                biome.clone(),
                             )?;
                         }
                     }
                 }
             }
-            for i in 0..16 {
-                let chunk = &chunks[i];
+            for (i, chunk) in chunks.iter().enumerate().take(16) {
                 let chunk = &fastnbt::to_bytes(&chunk)?;
                 region.write_chunk(
                     (region_oriented_section_x * 4 + (i >> 2)) & 0x1ff,
@@ -141,33 +138,28 @@ fn init_section_chunks(chunk_temp: &Chunk, pos: &DHSectionPos) -> Vec<Chunk> {
     let mut chunks = Vec::with_capacity(16);
     for i in 0..16 {
         let mut chunk = chunk_temp.clone();
-        chunk.set_chunk_pos(
-            &(pos.x) * 4 + (i >> 2) as i32,
-            &(pos.z) * 4 + (i & 3) as i32,
-        );
-        chunk.set_biome("minecraft:plains".to_string());
+        chunk.set_chunk_pos(&(pos.x) * 4 + (i >> 2), &(pos.z) * 4 + (i & 3));
         chunk.set_status("minecraft:initialize_light".to_string());
-        // chunk.light();
         chunks.push(chunk);
     }
     chunks
 }
 
-fn get_block(data_point: &DHFullDataPoint, dh_section: &DHSectionData) -> BlockState {
+fn get_block_biome(
+    data_point: &DHFullDataPoint,
+    dh_section: &DHSectionData,
+) -> (BlockState, String) {
     let mapping = &dh_section.mapping[data_point.id as usize];
     let block = mapping.block.clone();
     let state = &mapping.block_state;
-    BlockState {
+    let block_state = BlockState {
         name: block.unwrap_or_else(|| AIR.to_string()),
-        properties: if state.len() > 0 {
-            Some(
-                state
-                    .into_iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-            )
+        properties: if !state.is_empty() {
+            Some(state.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
         } else {
             None
         },
-    }
+    };
+    let biome = mapping.biome.clone();
+    (block_state, biome)
 }
