@@ -11,7 +11,7 @@ use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
 
 use clap::Parser;
 
-use crate::worldgen::WorldGenStatus;
+use crate::{data::RegionPos, worldgen::WorldGenStatus};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -95,7 +95,7 @@ pub fn start_progressbar(
                     }
                     WorldGenStatus::FinishDHSection { pos } => {
                         all_progress.inc(1);
-                        let region_pos = pos.to_region_pos();
+                        let region_pos = RegionPos::from(pos);
                         let region_file_path =
                             out_dir.join(format!("r.{}.{}.mca", region_pos.x, region_pos.z));
                         let file_size = metadata(region_file_path).unwrap().len();

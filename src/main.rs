@@ -25,7 +25,7 @@ use sql::DHDBConn;
 
 use crate::{
     cli::{Args, start_progressbar},
-    data::DHSectionPos,
+    data::RegionPos,
     worldgen::generate,
 };
 
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
     let region_poses: Vec<_> = conn
         .get_section_poses()?
         .into_par_iter()
-        .map(DHSectionPos::to_region_pos)
+        .map(RegionPos::from)
         .filter(|pos| {
             let limit = args.range as i64;
             args.range == 0

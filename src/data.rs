@@ -20,11 +20,20 @@ pub struct DHSectionPos {
     pub z: i32,
 }
 
-impl DHSectionPos {
-    pub fn to_region_pos(self) -> RegionPos {
+impl From<DHSectionPos> for RegionPos {
+    fn from(value: DHSectionPos) -> Self {
         RegionPos {
-            x: self.x >> 3,
-            z: self.z >> 3,
+            x: value.x >> 3,
+            z: value.z >> 3,
+        }
+    }
+}
+
+impl From<RegionPos> for DHSectionPos {
+    fn from(value: RegionPos) -> Self {
+        DHSectionPos {
+            x: value.x << 3,
+            z: value.z << 3,
         }
     }
 }

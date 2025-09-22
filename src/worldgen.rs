@@ -63,7 +63,7 @@ pub fn generate(
                 thread_idx: rayon::current_thread_index().unwrap(),
             })?;
             generate_region(
-                &region_pos,
+                region_pos,
                 dh_sections,
                 &region_file,
                 &temp_chunk,
@@ -76,16 +76,13 @@ pub fn generate(
 }
 
 fn generate_region(
-    region_pos: &RegionPos,
+    region_pos: RegionPos,
     dh_sections: HashMap<DHSectionPos, DHSectionData>,
     stream: impl Read + Write + Seek,
     chunk_temp: &Chunk,
     status_sender: &Sender<WorldGenStatus>,
 ) -> Result<()> {
-    let region_snapped_section_pos = DHSectionPos {
-        x: region_pos.x << 3,
-        z: region_pos.z << 3,
-    };
+    let region_snapped_section_pos = DHSectionPos::from(region_pos);
 
     let mut region = Region::create(stream)?;
     for region_oriented_section_x in 0..SECTION_REGION_SCALE {
