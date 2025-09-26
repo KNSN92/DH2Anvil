@@ -1,6 +1,6 @@
 [package]
 name = "dh2anvil"
-version = "0.2.0"
+version = "0.2.1"
 license = "MIT License"
 edition = "2024"
 authors = ["KNSN92"]
