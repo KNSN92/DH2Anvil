@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs::metadata,
-    path::Path,
+    path::{Path, PathBuf},
     sync::mpsc::{self, Receiver},
     thread,
     time::{Duration, SystemTime},
@@ -15,14 +15,6 @@ use crate::{data::RegionPos, worldgen::WorldGenStatus};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
-/// Command-line arguments for the application.
-///
-/// # Fields
-/// - `out`: Specifies the output directory for generated `.mca` files.
-///   Defaults to `./region`.
-/// - `threads`: Number of threads to use for world generation.
-///   Set to `0` to automatically select the optimal number based on available CPU cores.
-/// - `db_path`: Path to the input `.sqlite` file containing dh lod data.
 pub struct Args {
     #[arg(short, long, default_value_t = String::from("./region"), help="Specifies the output directory for generated `.mca` files.")]
     pub out: String,
@@ -40,19 +32,26 @@ pub struct Args {
         help = "Limits the generation range of region coordinates. If set to 0, all regions are generated. If set to 1 or higher, only regions where x and z are in the range -range to range-1 are generated."
     )]
     pub range: u32,
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Whether to overwrite an existing file."
+    )]
+    pub overwrite: bool,
     #[arg(help = "Path to the input `.sqlite` file containing dh lod data.")]
     pub db_path: String,
 }
 
 struct GeneratingRegionInfo {
     size: u64,
-    generated: u64,
-    thread_idx: usize,
+    thread_idx: Option<usize>,
+    file_path: PathBuf,
     progressbar: ProgressBar,
 }
 
 pub fn start_progressbar(
     regions_count: u64,
+    skipped_regions: u64,
     out_dir: impl AsRef<Path>,
     status_receiver: Receiver<WorldGenStatus>,
 ) -> impl FnOnce() {
@@ -75,11 +74,16 @@ pub fn start_progressbar(
             .progress_chars("..  ");
         let mut generating_regions = HashMap::new();
         let mut total_generated_size = 0u64;
+        let mut skipped_regions = skipped_regions;
         loop {
             let now = SystemTime::now();
             if let Ok(status) = status_receiver.try_recv() {
                 match status {
-                    WorldGenStatus::StartRegion { pos, thread_idx } => {
+                    WorldGenStatus::StartRegion {
+                        pos,
+                        thread_idx,
+                        file_path,
+                    } => {
                         let progressbar = ProgressBar::new(64);
                         progressbar.set_style(style.clone());
                         let progressbar = progresses.add(progressbar);
@@ -87,8 +91,8 @@ pub fn start_progressbar(
                             pos,
                             GeneratingRegionInfo {
                                 size: 0,
-                                generated: 0,
                                 thread_idx,
+                                file_path,
                                 progressbar,
                             },
                         );
@@ -96,12 +100,11 @@ pub fn start_progressbar(
                     WorldGenStatus::FinishDHSection { pos } => {
                         all_progress.inc(1);
                         let region_pos = RegionPos::from(pos);
-                        let region_file_path =
-                            out_dir.join(format!("r.{}.{}.mca", region_pos.x, region_pos.z));
-                        let file_size = metadata(region_file_path).unwrap().len();
                         let region_info = generating_regions.get_mut(&region_pos).unwrap();
+                        let file_size = metadata(&region_info.file_path)
+                            .map(|meta| meta.len())
+                            .unwrap_or(0);
                         region_info.size = file_size;
-                        region_info.generated += 1;
                         region_info.progressbar.inc(1);
                         region_info.progressbar.set_message(format!(
                             "[x:{} z:{}] [region x:{:>3} z:{:>3}] [thread:{}] {}",
@@ -109,16 +112,25 @@ pub fn start_progressbar(
                             pos.z - (region_pos.z << 3),
                             region_pos.x,
                             region_pos.z,
-                            region_info.thread_idx,
+                            region_info
+                                .thread_idx
+                                .map_or("?".to_string(), |idx| idx.to_string()),
                             HumanBytes(file_size)
                         ));
                     }
                     WorldGenStatus::FinishRegion { pos } => {
                         if let Some(region_info) = generating_regions.remove(&pos) {
-                            total_generated_size += region_info.size;
+                            let region_file_path =
+                                out_dir.join(format!("r.{}.{}.mca", pos.x, pos.z));
+                            let file_size = metadata(region_file_path).unwrap().len();
+                            total_generated_size += file_size;
                             region_info.progressbar.finish_and_clear();
                             progresses.remove(&region_info.progressbar);
                         }
+                    }
+                    WorldGenStatus::SkipRegions => {
+                        all_progress.inc(64);
+                        skipped_regions += 1;
                     }
                 }
                 let total_size =
@@ -126,10 +138,13 @@ pub fn start_progressbar(
                 all_progress.set_message(HumanBytes(total_size).to_string());
             }
             if stop_receiver.try_recv().is_ok() {
-                let total_size =
-                    total_generated_size + generating_regions.values().map(|v| v.size).sum::<u64>();
-                all_progress.finish_with_message(format!("{} Finished", HumanBytes(total_size)));
-                println!("Done ✨");
+                if skipped_regions > 0 {
+                    println!(
+                        "{skipped_regions} region files were skipped because a file with the same name already exists!\nTips: If you need to overwrite an existing mca file, add the \"--overwrite\" option to the command!\nDone ✨"
+                    );
+                } else {
+                    println!("Done ✨");
+                }
                 return;
             }
             let elapsed = now.elapsed().unwrap();

@@ -26,7 +26,7 @@ use sql::DHDBConn;
 use crate::{
     cli::{Args, start_progressbar},
     data::RegionPos,
-    worldgen::generate,
+    worldgen::{generate_world, get_region_filename},
 };
 
 fn main() -> Result<()> {
@@ -43,7 +43,7 @@ fn main() -> Result<()> {
             .unwrap();
     }
     let conn = DHDBConn::get_conn(db_path)?;
-    let region_poses: Vec<_> = conn
+    let mut region_poses: Vec<_> = conn
         .get_section_poses()?
         .into_par_iter()
         .map(RegionPos::from)
@@ -60,8 +60,26 @@ fn main() -> Result<()> {
     let out_dir = Path::new(&args.out);
     create_dir_all(out_dir)?;
     let (status_sender, status_receiver) = mpsc::channel();
-    let stop_progressbar = start_progressbar(region_poses.len() as u64, out_dir, status_receiver);
-    generate(region_poses, conn, out_dir, status_sender)?;
+    let skipped_regions = if !args.overwrite {
+        let full_region_count = region_poses.len();
+        region_poses = region_poses
+            .into_par_iter()
+            .filter(|region_pos| {
+                let region_file = out_dir.join(get_region_filename(region_pos));
+                !region_file.exists()
+            })
+            .collect();
+        full_region_count - region_poses.len()
+    } else {
+        0
+    };
+    let stop_progressbar = start_progressbar(
+        region_poses.len() as u64,
+        skipped_regions as u64,
+        out_dir,
+        status_receiver,
+    );
+    generate_world(region_poses, conn, out_dir, args.overwrite, status_sender)?;
     stop_progressbar();
     Ok(())
 }

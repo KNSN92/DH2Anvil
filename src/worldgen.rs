@@ -1,9 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
     io::{Read, Seek, Write},
-    path::Path,
-    sync::mpsc::Sender,
+    path::{Path, PathBuf},
+    sync::{LazyLock, mpsc::Sender},
 };
 
 use anyhow::{Result, ensure};
@@ -22,18 +21,29 @@ const Y_OFFSET: i32 = -64;
 // section_pos / 8 = region_pos
 pub const SECTION_REGION_SCALE: usize = 512 / DH_SECTION_WIDTH;
 
-const CHUNK_TEMP: &[u8] = include_bytes!("../chunk.nbt");
+static TEMP_CHUNK: LazyLock<Chunk> =
+    LazyLock::new(|| fastnbt::from_bytes::<Chunk>(include_bytes!("../chunk.nbt")).unwrap());
 
 pub enum WorldGenStatus {
-    StartRegion { pos: RegionPos, thread_idx: usize },
-    FinishDHSection { pos: DHSectionPos },
-    FinishRegion { pos: RegionPos },
+    StartRegion {
+        pos: RegionPos,
+        thread_idx: Option<usize>,
+        file_path: PathBuf,
+    },
+    FinishDHSection {
+        pos: DHSectionPos,
+    },
+    FinishRegion {
+        pos: RegionPos,
+    },
+    SkipRegions,
 }
 
-pub fn generate(
+pub fn generate_world(
     region_poses: Vec<RegionPos>,
     section_requester: impl DHDataRequester + Send + Sync,
     out_dir: impl AsRef<Path>,
+    overwrite_file: bool,
     status_sender: Sender<WorldGenStatus>,
 ) -> Result<()> {
     ensure!(
@@ -42,44 +52,43 @@ pub fn generate(
         out_dir.as_ref().to_str().unwrap_or("None")
     );
     let out_dir = out_dir.as_ref().to_path_buf();
-    let temp_chunk = fastnbt::from_bytes::<Chunk>(CHUNK_TEMP)?;
-    let region_poses = region_poses.into_iter().collect::<HashSet<_>>();
+    let region_poses = region_poses
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    // region_poses.par_sort_by(|a, b| (a.x.abs() + a.z.abs()).cmp(&(b.x.abs() + b.z.abs())));
     region_poses
         .into_par_iter()
         .try_for_each(|region_pos| -> Result<()> {
-            let dh_sections = section_requester.request_sections_in_region(&region_pos)?;
-            if dh_sections.is_empty() {
-                return Ok(());
-            }
-            let region_file = out_dir.join(format!("r.{}.{}.mca", region_pos.x, region_pos.z));
-            let region_file = File::options()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(region_file)?;
+            let region_file_path = out_dir.join(get_region_filename(&region_pos));
+            let region_file = tempfile::NamedTempFile::new()?;
             status_sender.send(WorldGenStatus::StartRegion {
                 pos: region_pos,
-                thread_idx: rayon::current_thread_index().unwrap(),
+                thread_idx: rayon::current_thread_index(),
+                file_path: region_file.path().to_path_buf(),
             })?;
-            generate_region(
-                region_pos,
-                dh_sections,
-                &region_file,
-                &temp_chunk,
-                &status_sender,
-            )?;
-            status_sender.send(WorldGenStatus::FinishRegion { pos: region_pos })?;
-            Result::Ok(())
+            let dh_sections = section_requester.request_sections_in_region(&region_pos)?;
+            generate_region(region_pos, dh_sections, &region_file, &status_sender)?;
+            if overwrite_file || !region_file_path.exists() {
+                region_file.persist(region_file_path)?;
+                status_sender.send(WorldGenStatus::FinishRegion { pos: region_pos })?;
+            } else {
+                status_sender.send(WorldGenStatus::SkipRegions)?;
+            }
+            Ok(())
         })?;
     Ok(())
+}
+
+pub fn get_region_filename(pos: &RegionPos) -> String {
+    format!("r.{}.{}.mca", pos.x, pos.z)
 }
 
 fn generate_region(
     region_pos: RegionPos,
     dh_sections: HashMap<DHSectionPos, DHSectionData>,
     stream: impl Read + Write + Seek,
-    chunk_temp: &Chunk,
     status_sender: &Sender<WorldGenStatus>,
 ) -> Result<()> {
     let region_snapped_section_pos = DHSectionPos::from(region_pos);
@@ -98,7 +107,7 @@ fn generate_region(
                 continue;
             };
             // Chunks in current section
-            let mut chunks = init_section_chunks(chunk_temp, &section_pos);
+            let mut chunks = init_section_chunks(&section_pos);
             for x in 0..DH_SECTION_WIDTH {
                 for z in 0..DH_SECTION_WIDTH {
                     let chunk = &mut chunks[(x & 0x30) >> 2 | (z & 0x30) >> 4];
@@ -131,10 +140,10 @@ fn generate_region(
     Ok(())
 }
 
-fn init_section_chunks(chunk_temp: &Chunk, pos: &DHSectionPos) -> Vec<Chunk> {
+fn init_section_chunks(pos: &DHSectionPos) -> Vec<Chunk> {
     let mut chunks = Vec::with_capacity(16);
     for i in 0..16 {
-        let mut chunk = chunk_temp.clone();
+        let mut chunk = TEMP_CHUNK.clone();
         chunk.set_chunk_pos(&(pos.x) * 4 + (i >> 2), &(pos.z) * 4 + (i & 3));
         chunk.set_status("minecraft:initialize_light".to_string());
         chunks.push(chunk);

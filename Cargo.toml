@@ -1,6 +1,6 @@
 [package]
 name = "dh2anvil"
-version = "0.2.1"
+version = "0.3.0"
 license = "MIT License"
 edition = "2024"
 authors = ["KNSN92"]
@@ -17,6 +17,7 @@ rayon = "1.11.0"
 indicatif = "0.18.0"
 clap = { version = "4.5.46", features = ["derive"] }
 console = "0.16.1"
+tempfile = "3.23.0"
 
 [profile.release]
 debug = true
