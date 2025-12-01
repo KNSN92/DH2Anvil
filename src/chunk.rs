@@ -4,6 +4,8 @@ use anyhow::{Result, bail};
 use fastnbt::{LongArray, Value};
 use serde::{Deserialize, Serialize};
 
+use crate::block_entity::{BlockEntity, BlockEntityData, create_default_block_entity};
+
 pub const AIR: &str = "minecraft:air";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +17,8 @@ pub struct Chunk {
     #[serde(rename = "Status")]
     pub status: String,
     pub sections: Vec<Section>,
+    #[serde(default)]
+    pub block_entities: Vec<BlockEntityData>,
 
     #[serde(flatten)]
     other: HashMap<String, Value>,
@@ -66,6 +70,14 @@ impl Chunk {
         section.biomes.data[(y << 8 | z << 4 | x) as usize] = id;
 
         Ok(())
+    }
+
+    pub fn add_block_entity(&mut self, block_entity: BlockEntity, x: u32, y: i32, z: u32) {
+        let x = self.x * 16 + x as i32;
+        let z = self.z * 16 + z as i32;
+
+        let block_entity = create_default_block_entity(block_entity, x, y, z);
+        self.block_entities.push(block_entity);
     }
 }
 

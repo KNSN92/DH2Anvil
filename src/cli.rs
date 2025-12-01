@@ -46,6 +46,12 @@ pub enum Commands {
             help = "Whether to overwrite an existing file."
         )]
         overwrite: bool,
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Whether to include block entities in the output."
+        )]
+        no_blockentity: bool,
         #[arg(help = "Path to the input `.sqlite` file containing dh lod data.")]
         db_path: String,
     },

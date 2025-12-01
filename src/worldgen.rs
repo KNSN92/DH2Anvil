@@ -10,6 +10,7 @@ use fastanvil::Region;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
+    block_entity::{BlockEntity, lookup_block_entity_name},
     chunk::{AIR, BlockState, Chunk},
     data::{
         DH_SECTION_WIDTH, DHDataRequester, DHFullDataPoint, DHSectionData, DHSectionPos, RegionPos,
@@ -44,6 +45,7 @@ pub fn generate_world(
     section_requester: impl DHDataRequester + Send + Sync,
     out_dir: impl AsRef<Path>,
     overwrite_file: bool,
+    no_blockentity: bool,
     status_sender: Sender<WorldGenStatus>,
 ) -> Result<()> {
     ensure!(
@@ -69,7 +71,7 @@ pub fn generate_world(
                 file_path: region_file.path().to_path_buf(),
             })?;
             let dh_sections = section_requester.request_sections_in_region(&region_pos)?;
-            generate_region(region_pos, dh_sections, &region_file, &status_sender)?;
+            generate_region(region_pos, dh_sections, &region_file, &status_sender, no_blockentity)?;
             if overwrite_file || !region_file_path.exists() {
                 region_file.persist(region_file_path)?;
                 status_sender.send(WorldGenStatus::FinishRegion { pos: region_pos })?;
@@ -90,6 +92,7 @@ fn generate_region(
     dh_sections: HashMap<DHSectionPos, DHSectionData>,
     stream: impl Read + Write + Seek,
     status_sender: &Sender<WorldGenStatus>,
+    no_blockentity: bool,
 ) -> Result<()> {
     let region_snapped_section_pos = DHSectionPos::from(region_pos);
 
@@ -106,6 +109,11 @@ fn generate_region(
                 status_sender.send(WorldGenStatus::FinishDHSection { pos: section_pos })?;
                 continue;
             };
+            let block_entity_identifier_map = if no_blockentity {
+                HashMap::new()
+            } else {
+                get_block_entity_data_point_identifier_map(&dh_section)
+            };
             // Chunks in current section
             let mut chunks = init_section_chunks(&section_pos);
             for x in 0..DH_SECTION_WIDTH {
@@ -114,14 +122,24 @@ fn generate_region(
                     let data_points = &dh_section.data[x * DH_SECTION_WIDTH + z];
                     for data_point in data_points {
                         let (block, biome) = get_block_biome(data_point, dh_section);
+                        let block_entity = block_entity_identifier_map.get(&data_point.id);
                         for y in data_point.min_y..data_point.min_y + data_point.height {
+                            let adjusted_y = (y + Y_OFFSET).min(319);
                             chunk.set_block_biome(
                                 x as u32 & 0xf,
-                                (y + Y_OFFSET).min(319),
+                                adjusted_y,
                                 z as u32 & 0xf,
                                 block.clone(),
                                 biome.clone(),
                             )?;
+                            if !no_blockentity && let Some(block_entity) = block_entity {
+                                chunk.add_block_entity(
+                                    *block_entity,
+                                    x as u32 & 0xf,
+                                    adjusted_y,
+                                    z as u32 & 0xf,
+                                );
+                            }
                         }
                     }
                 }
@@ -168,4 +186,21 @@ fn get_block_biome(
     };
     let biome = mapping.biome.clone();
     (block_state, biome)
+}
+
+fn get_block_entity_data_point_identifier_map(
+    dh_section: &DHSectionData,
+) -> HashMap<i32, BlockEntity> {
+    dh_section
+        .mapping
+        .iter()
+        .enumerate()
+        .filter_map(|(i, entry)| {
+            entry
+                .block
+                .clone()
+                .map(|block| lookup_block_entity_name(&block).map(|block| (i as i32, block)))
+                .flatten()
+        })
+        .collect()
 }

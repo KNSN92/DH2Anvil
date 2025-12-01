@@ -4,6 +4,7 @@ mod data;
 mod decompress;
 mod sql;
 mod worldgen;
+mod block_entity;
 
 use std::{
     collections::HashSet,
@@ -18,7 +19,6 @@ use std::{
 use anyhow::{Result, ensure};
 use clap::Parser;
 use console::style;
-use indicatif::HumanBytes;
 use rayon::{
     ThreadPoolBuilder,
     iter::{IntoParallelIterator, ParallelIterator},
@@ -35,8 +35,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
     
     match args.command {
-        Commands::Convert { db_path, out, threads, range, overwrite } => {
-            run_convert(db_path, out, threads, range, overwrite)?;
+        Commands::Convert { db_path, out, threads, range, overwrite, no_blockentity } => {
+            run_convert(db_path, out, threads, range, overwrite, no_blockentity)?;
         }
         Commands::Info { db_path } => {
             run_info(db_path)?;
@@ -52,6 +52,7 @@ fn run_convert(
     threads: u8,
     range: u32,
     overwrite: bool,
+    no_blockentity: bool
 ) -> Result<()> {
     let db_path = Path::new(&db_path);
     ensure!(
@@ -103,7 +104,7 @@ fn run_convert(
         out_dir,
         status_receiver,
     );
-    generate_world(region_poses, conn, out_dir, overwrite, status_sender)?;
+    generate_world(region_poses, conn, out_dir, overwrite, no_blockentity, status_sender)?;
     stop_progressbar();
     Ok(())
 }
