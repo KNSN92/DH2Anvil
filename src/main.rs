@@ -17,6 +17,8 @@ use std::{
 
 use anyhow::{Result, ensure};
 use clap::Parser;
+use console::style;
+use indicatif::HumanBytes;
 use rayon::{
     ThreadPoolBuilder,
     iter::{IntoParallelIterator, ParallelIterator},
@@ -24,21 +26,41 @@ use rayon::{
 use sql::DHDBConn;
 
 use crate::{
-    cli::{Args, start_progressbar},
+    cli::{Args, Commands, start_progressbar},
     data::RegionPos,
     worldgen::{generate_world, get_region_filename},
 };
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let db_path = Path::new(&args.db_path);
+    
+    match args.command {
+        Commands::Convert { db_path, out, threads, range, overwrite } => {
+            run_convert(db_path, out, threads, range, overwrite)?;
+        }
+        Commands::Info { db_path } => {
+            run_info(db_path)?;
+        }
+    }
+    
+    Ok(())
+}
+
+fn run_convert(
+    db_path: String,
+    out: String,
+    threads: u8,
+    range: u32,
+    overwrite: bool,
+) -> Result<()> {
+    let db_path = Path::new(&db_path);
     ensure!(
         db_path.exists(),
-        format!("DH Lod data file '{}' does not exists", args.db_path)
+        format!("DH Lod data file '{}' does not exists", db_path.display())
     );
-    if args.threads > 0 {
+    if threads > 0 {
         ThreadPoolBuilder::new()
-            .num_threads(args.threads as usize)
+            .num_threads(threads as usize)
             .build_global()
             .unwrap();
     }
@@ -48,19 +70,21 @@ fn main() -> Result<()> {
         .into_par_iter()
         .map(RegionPos::from)
         .filter(|pos| {
-            let limit = args.range as i64;
-            args.range == 0
+            let limit = range as i64;
+            range == 0
                 || (-limit..limit).contains(&(pos.x as i64))
                     && (-limit..limit).contains(&(pos.z as i64))
         })
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    
+    let out_dir = Path::new(&out);
+    
     let conn = Mutex::new(conn);
-    let out_dir = Path::new(&args.out);
     create_dir_all(out_dir)?;
     let (status_sender, status_receiver) = mpsc::channel();
-    let skipped_regions = if !args.overwrite {
+    let skipped_regions = if !overwrite {
         let full_region_count = region_poses.len();
         region_poses = region_poses
             .into_par_iter()
@@ -79,7 +103,45 @@ fn main() -> Result<()> {
         out_dir,
         status_receiver,
     );
-    generate_world(region_poses, conn, out_dir, args.overwrite, status_sender)?;
+    generate_world(region_poses, conn, out_dir, overwrite, status_sender)?;
     stop_progressbar();
+    Ok(())
+}
+
+fn run_info(db_path: String) -> Result<()> {
+    let db_path = Path::new(&db_path);
+    ensure!(
+        db_path.exists(),
+        format!("DH Lod data file '{}' does not exists", db_path.display())
+    );
+    
+    println!("{}", style("=== Database Information ===").bold().cyan());
+    println!("Database file: {}", db_path.display());
+    
+    let conn = DHDBConn::get_conn(db_path)?;
+    let stats = conn.get_database_stats()?;
+    
+    let total_regions = conn
+        .get_section_poses()?
+        .into_par_iter()
+        .map(RegionPos::from)
+        .collect::<HashSet<_>>()
+        .len();
+    
+    println!("\n{}", style("Statistics:").bold());
+    println!("  Total sections:     {}", stats.total_sections);
+    println!("  Total regions:      {}", total_regions);
+    
+    println!("\n{}", style("Coordinate Range:").bold());
+    println!("  Section X: {} to {}", stats.min_section_x, stats.max_section_x);
+    println!("  Section Z: {} to {}", stats.min_section_z, stats.max_section_z);
+    
+    let region_min_x = stats.min_section_x >> 3;
+    let region_max_x = stats.max_section_x >> 3;
+    let region_min_z = stats.min_section_z >> 3;
+    let region_max_z = stats.max_section_z >> 3;
+    println!("  Region X:  {} to {}", region_min_x, region_max_x);
+    println!("  Region Z:  {} to {}", region_min_z, region_max_z);
+    
     Ok(())
 }

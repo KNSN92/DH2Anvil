@@ -9,37 +9,51 @@ use std::{
 
 use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 use crate::{data::RegionPos, worldgen::WorldGenStatus};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
 pub struct Args {
-    #[arg(short, long, default_value_t = String::from("./region"), help="Specifies the output directory for generated `.mca` files.")]
-    pub out: String,
-    #[arg(
-        short,
-        long,
-        default_value_t = 0,
-        help = "Number of threads to use for world generation. Set to 0 for automatic selection based on available CPU cores."
-    )]
-    pub threads: u8,
-    #[arg(
-        short,
-        long,
-        default_value_t = 0,
-        help = "Limits the generation range of region coordinates. If set to 0, all regions are generated. If set to 1 or higher, only regions where x and z are in the range -range to range-1 are generated."
-    )]
-    pub range: u32,
-    #[arg(
-        long,
-        default_value_t = false,
-        help = "Whether to overwrite an existing file."
-    )]
-    pub overwrite: bool,
-    #[arg(help = "Path to the input `.sqlite` file containing dh lod data.")]
-    pub db_path: String,
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Commands {
+    #[command(about = "Convert DH LOD data to Anvil format")]
+    Convert {
+        #[arg(short, long, default_value_t = String::from("./region"), help="Specifies the output directory for generated `.mca` files.")]
+        out: String,
+        #[arg(
+            short,
+            long,
+            default_value_t = 0,
+            help = "Number of threads to use for world generation. Set to 0 for automatic selection based on available CPU cores."
+        )]
+        threads: u8,
+        #[arg(
+            short,
+            long,
+            default_value_t = 0,
+            help = "Limits the generation range of region coordinates. If set to 0, all regions are generated. If set to 1 or higher, only regions where x and z are in the range -range to range-1 are generated."
+        )]
+        range: u32,
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Whether to overwrite an existing file."
+        )]
+        overwrite: bool,
+        #[arg(help = "Path to the input `.sqlite` file containing dh lod data.")]
+        db_path: String,
+    },
+    #[command(about = "Display information about the database")]
+    Info {
+        #[arg(help = "Path to the input `.sqlite` file containing dh lod data.")]
+        db_path: String,
+    },
 }
 
 struct GeneratingRegionInfo {
@@ -128,7 +142,7 @@ pub fn start_progressbar(
                             progresses.remove(&region_info.progressbar);
                         }
                     }
-                    WorldGenStatus::SkipRegions => {
+                    WorldGenStatus::SkipRegion => {
                         all_progress.inc(64);
                         skipped_regions += 1;
                     }

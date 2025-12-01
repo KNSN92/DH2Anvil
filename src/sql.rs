@@ -13,6 +13,15 @@ use crate::{
 
 pub struct DHDBConn(pub Connection);
 
+#[derive(Debug)]
+pub struct DatabaseStats {
+    pub total_sections: usize,
+    pub min_section_x: i32,
+    pub max_section_x: i32,
+    pub min_section_z: i32,
+    pub max_section_z: i32,
+}
+
 impl DHDBConn {
     pub fn get_conn(file: impl AsRef<Path>) -> Result<DHDBConn> {
         Ok(DHDBConn(Connection::open(file)?))
@@ -33,6 +42,28 @@ impl DHDBConn {
             poses.push(pos?);
         }
         Ok(poses)
+    }
+
+    pub fn get_database_stats(&self) -> Result<DatabaseStats> {
+        let total_sections: i64 = self.0.query_row(
+            "SELECT COUNT(*) FROM FullData WHERE DetailLevel = 0",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let (min_x, max_x, min_z, max_z): (Option<i32>, Option<i32>, Option<i32>, Option<i32>) = self.0.query_row(
+            "SELECT MIN(PosX), MAX(PosX), MIN(PosZ), MAX(PosZ) FROM FullData WHERE DetailLevel = 0",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+
+        Ok(DatabaseStats {
+            total_sections: total_sections as usize,
+            min_section_x: min_x.unwrap_or(0),
+            max_section_x: max_x.unwrap_or(0),
+            min_section_z: min_z.unwrap_or(0),
+            max_section_z: max_z.unwrap_or(0),
+        })
     }
 
     pub fn get_sections_in_region(

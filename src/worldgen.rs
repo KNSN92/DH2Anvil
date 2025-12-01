@@ -36,7 +36,7 @@ pub enum WorldGenStatus {
     FinishRegion {
         pos: RegionPos,
     },
-    SkipRegions,
+    SkipRegion,
 }
 
 pub fn generate_world(
@@ -74,7 +74,7 @@ pub fn generate_world(
                 region_file.persist(region_file_path)?;
                 status_sender.send(WorldGenStatus::FinishRegion { pos: region_pos })?;
             } else {
-                status_sender.send(WorldGenStatus::SkipRegions)?;
+                status_sender.send(WorldGenStatus::SkipRegion)?;
             }
             Ok(())
         })?;
