@@ -17,8 +17,6 @@ use crate::{
     },
 };
 
-const Y_OFFSET: i32 = -64;
-
 // section_pos / 8 = region_pos
 pub const SECTION_REGION_SCALE: usize = 512 / DH_SECTION_WIDTH;
 
@@ -124,7 +122,7 @@ fn generate_region(
                         let (block, biome) = get_block_biome(data_point, dh_section);
                         let block_entity = block_entity_identifier_map.get(&data_point.id);
                         for y in data_point.min_y..data_point.min_y + data_point.height {
-                            let adjusted_y = (y + Y_OFFSET).min(319);
+                            let adjusted_y = (y + dh_section.min_y).min(319);
                             chunk.set_block_biome(
                                 x as u32 & 0xf,
                                 adjusted_y,
